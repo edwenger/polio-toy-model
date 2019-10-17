@@ -1,4 +1,4 @@
-A prototype of polio toy model:
+#### A prototype of polio toy model:
 
 * Simple S, I, R with constant population by village
 * Connecting villages in explicit neighbor network
