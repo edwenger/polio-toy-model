@@ -97,7 +97,7 @@ def test_neighbor_topology():
     ax.plot(locations[0][0], locations[0][1], 'o', color='c')
     ax.scatter(*zip(*neighbors[0]), color='m')
 
-    ax.set(aspect='equal')
+    ax.set(aspect='equal', yticks=[], xticks=[])
     fig.set_tight_layout(True)
 
 
