@@ -30,8 +30,10 @@ def initialize_topology(sim, n_locations=500):
 
     locations = np.random.rand(n_locations, 2)
     _, neighbors = get_neighbors_dict(locations)
-    N = PowerLawPopulationDistribution()(np.random.rand(n_locations))
-    vax = np.random.uniform(0.25, 0.75, size=n_locations)
+    normalized_sizes = np.random.rand(n_locations)
+    N = PowerLawPopulationDistribution()(normalized_sizes)
+    # vax = np.random.uniform(0.3, 0.9, size=n_locations)
+    vax = 0.3 + 0.4 * normalized_sizes + np.random.uniform(-0.2, 0.2, size=n_locations)  # higher in big places
 
     villages = [Village(loc=locations[i], N=N[i], vaccinated_fraction=vax[i], sim=sim) for i in range(n_locations)]
 
@@ -55,21 +57,23 @@ if __name__ == '__main__':
     ch.setLevel(logging.INFO)
     root_log.addHandler(ch)
 
-    params = dict(sim_duration=26,
+    params = dict(sim_duration=26*3,
                   reports=[
                       SummaryReport(),
-                      ConsoleSummary(),
+                      # ConsoleSummary(),
                       TransmissionReport(),
                       InitializationReport()
                   ],
                   initializer_fn=[
                       initialize_topology,
-                      dict(n_locations=20)
+                      dict(n_locations=200)
                   ])
 
     sim = Simulation(params)
     logging.debug(sim.villages[1])
 
-    sim.villages[0].challenge(10)
+    seed_ixs = np.random.choice(len(sim.villages), 5)
+    for ix in seed_ixs:
+        sim.villages[ix].challenge(10)
 
     sim.run()

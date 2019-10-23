@@ -22,8 +22,8 @@ class Infected(object):
 
     uid = itertools.count()  # unique index generator
 
-    internal_contact_rate = 5.0
-    external_contact_rate = 2.0
+    internal_contact_rate = 6.0
+    external_contact_rate = 0.5
     
     def __init__(self, village):
         self.ix = next(Infected.uid)

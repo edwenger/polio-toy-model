@@ -22,7 +22,7 @@ class Village(object):
         self.loc = tuple(loc)  # (x, y)
         self.N = N  # total population
         self.vaccinated_fraction = vaccinated_fraction
-        self.S = int(N * (1.-vaccinated_fraction))  # initial state
+        self.S = np.random.randint(0, int(N * (1.-vaccinated_fraction)))  # initialize randomly between 0 and steady state
         self.neighbors = neighbors  # [Village]
         self.previous_infecteds = []  # [Infected]
         self.infecteds = []  # [Infected]
