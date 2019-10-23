@@ -4,6 +4,9 @@ import numpy as np
 
 from triangulate import get_neighbors_dict
 from village import Village
+from simulation import Simulation
+from report.summary import SummaryReport, ConsoleSummary
+from report.transmission import TransmissionReport
 
 
 class PowerLawPopulationDistribution(object):
@@ -21,14 +24,14 @@ class PowerLawPopulationDistribution(object):
         return np.power(10, self.offset + self.scale * x)
 
 
-def initialize_topology(n_locations=500):
+def initialize_topology(sim, n_locations=500):
 
     locations = np.random.rand(n_locations, 2)
     _, neighbors = get_neighbors_dict(locations)
     N = PowerLawPopulationDistribution()(np.random.rand(n_locations))
     vax = np.random.uniform(0.25, 0.75, size=n_locations)
 
-    villages = [Village(loc=locations[i], N=N[i], vaccinated_fraction=vax[i]) for i in range(n_locations)]
+    villages = [Village(loc=locations[i], N=N[i], vaccinated_fraction=vax[i], sim=sim) for i in range(n_locations)]
 
     _, neighbors = get_neighbors_dict(locations)
 
@@ -40,26 +43,30 @@ def initialize_topology(n_locations=500):
 
 if __name__ == '__main__':
 
-    logging.basicConfig(format='%(message)s', level=logging.INFO)
+    log_formatter = logging.Formatter('%(message)s')
 
-    villages = initialize_topology(20)
-    logging.debug(villages[1])
+    root_log = logging.getLogger()
+    root_log.setLevel(logging.INFO)
 
-    villages[0].challenge(10)
+    ch = logging.StreamHandler()
+    ch.setFormatter(log_formatter)
+    ch.setLevel(logging.INFO)
+    root_log.addHandler(ch)
 
-    generation = 0
-    while generation < 26:
-        logging.info('\n------------------------------------------------------------'
-                     '\ngeneration-%d'
-                     '\n------------------------------------------------------------', generation)
+    params = dict(sim_duration=26,
+                  reports=[
+                      SummaryReport(),
+                      ConsoleSummary(),
+                      TransmissionReport()
+                  ],
+                  initializer_fn=[
+                      initialize_topology,
+                      dict(n_locations=20)
+                  ])
 
-        for v in villages:
-            v.update()
+    sim = Simulation(params)
+    logging.debug(sim.villages[1])
 
-        for v in villages:
-            v.transmit()
-            logging.info(v.summary())
+    sim.villages[0].challenge(10)
 
-        logging.info('------------------------------------------------------------')
-
-        generation += 1
+    sim.run()

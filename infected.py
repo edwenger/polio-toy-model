@@ -7,9 +7,13 @@ class Transmission(object):
     
     """ A container for info related to transmission event """
 
-    def __init__(self, infection_id, village_id):
+    def __init__(self, infection_id=None, village_id=None):
         self.infection_id = infection_id
         self.village_id = village_id
+
+    @property
+    def transmitter(self):
+        return self.infection_id if self.infection_id is not None else ''
 
 
 class Infected(object):

@@ -3,7 +3,7 @@ import logging
 
 import numpy as np
 
-from infected import Infected
+from infected import Infected, Transmission
 
 
 log = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ class Village(object):
     
     birth_rate = 0.03 / 26.  # per person fortnight
     
-    def __init__(self, loc, N, vaccinated_fraction=0, neighbors=[]):
+    def __init__(self, loc, N, vaccinated_fraction=0, neighbors=[], sim=None):
         self.ix = next(Village.uid)
         self.loc = tuple(loc)  # (x, y)
         self.N = N  # total population
@@ -26,6 +26,7 @@ class Village(object):
         self.neighbors = neighbors  # [Village]
         self.previous_infecteds = []  # [Infected]
         self.infecteds = []  # [Infected]
+        self.sim = sim  # simulation context
 
     def __str__(self):
         return '%s(id=%d, loc=%s, N=%d, vaccinated_fraction=%0.2f, neighbor_ids=%s)' \
@@ -53,7 +54,7 @@ class Village(object):
         for infected in self.previous_infecteds:
             infected.transmit()
 
-    def challenge(self, n_transmissions, transmitter_info=None):
+    def challenge(self, n_transmissions, transmitter_info=Transmission()):
         """ Perform infectious contacts triggered by transmitter """
 
         infections = np.random.binomial(n_transmissions, float(self.S) / self.N)
@@ -63,12 +64,13 @@ class Village(object):
         for _ in range(infections):
             self.S -= 1
             acquired_infection = Infected(village=self)
-            logging.debug('\nAcquired infection-%d in village-%d',
-                          acquired_infection.ix, self.ix)
-                
-            if transmitter_info is not None:
-                logging.debug('==> transmitted by infection-%d in village-%d',
-                              transmitter_info.infection_id, transmitter_info.village_id)
+
+            self.sim.notify('acquired_infection',
+                            simulation=self.sim,
+                            village=self,
+                            transmitter=transmitter_info,
+                            infected=acquired_infection
+                            )
 
             self.infecteds.append(acquired_infection)
 
@@ -77,5 +79,4 @@ class Village(object):
         return len(self.infecteds)
 
     def summary(self):
-        # return 'village-%d: S=%d I=%d N=%d' % (self.ix, self.S, self.I, self.N)
         return 'village-%d:\t(N,S,I) = \t%d\t%d\t%d' % (self.ix, self.N, self.S, self.I)
