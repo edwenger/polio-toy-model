@@ -16,9 +16,13 @@ class Simulation(object):
 
     def __init__(self, params):
         self.generation = 0
+
+        self.reports = params.pop('reports', [])
+
         initializer_fn, initializer_kwargs = params.pop('initializer_fn')
         self.villages = initializer_fn(self, **initializer_kwargs)
-        self.reports = params.pop('reports', [])
+        self.notify('villages_init', villages=self.villages)
+
         self.params = Params(**params)
 
     def run(self):
@@ -27,7 +31,7 @@ class Simulation(object):
 
     def update(self):
 
-        self.notify('simulation_generation_begin', simulation=self)
+        self.notify('simulation_update_begin', simulation=self)
 
         for v in self.villages:
             v.update()
@@ -36,7 +40,7 @@ class Simulation(object):
             v.transmit()
             self.notify('village_summary', simulation=self, village=v)
 
-        self.notify('simulation_generation_end')
+        self.notify('simulation_update_end')
 
         self.generation += 1
 

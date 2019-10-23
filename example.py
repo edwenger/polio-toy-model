@@ -5,8 +5,10 @@ import numpy as np
 from triangulate import get_neighbors_dict
 from village import Village
 from simulation import Simulation
+
 from report.summary import SummaryReport, ConsoleSummary
 from report.transmission import TransmissionReport
+from report.initialization import InitializationReport
 
 
 class PowerLawPopulationDistribution(object):
@@ -57,7 +59,8 @@ if __name__ == '__main__':
                   reports=[
                       SummaryReport(),
                       ConsoleSummary(),
-                      TransmissionReport()
+                      TransmissionReport(),
+                      InitializationReport()
                   ],
                   initializer_fn=[
                       initialize_topology,

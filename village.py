@@ -34,6 +34,13 @@ class Village(object):
                   self.ix, self.loc, self.N, self.vaccinated_fraction,
                   {v.ix for v in self.neighbors})
 
+    def to_dict(self):
+        return dict(ix=self.ix,
+                    loc=self.loc,
+                    N=self.N,
+                    vaccinated_fraction=self.vaccinated_fraction,
+                    neighbors=[n.ix for n in self.neighbors])
+
     def update(self):
         
         """ Move infecteds from past timestep """
