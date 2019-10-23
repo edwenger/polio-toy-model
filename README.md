@@ -7,3 +7,7 @@
 * Reporting detailed transmission events
 
 ![Village Topology](/village_topology.png)
+
+And some interactive plotly visualization to explore infection and immune dynamics:
+
+![Spatial Epidemic Snapshot](/spatial_epidemic_snapshot.png)
