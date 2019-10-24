@@ -14,9 +14,14 @@ import os
 import numpy as np
 import pandas as pd
 import tskit
+import msprime
 
 
 output_directory = 'output'
+
+genome_length = 300
+
+N = 1000  # historical haploid effective population
 
 
 def parse_transmission_events():
@@ -58,7 +63,7 @@ def dump_edges(df, path=os.path.join(output_directory, 'edge_table.txt')):
 
     # using the whole genome as the transmitted unit (i.e. no recombination)
     valid_edges['left'] = 0
-    valid_edges['right'] = 1
+    valid_edges['right'] = genome_length
 
     valid_edges.to_csv(path, index=False, sep='\t')
 
@@ -66,7 +71,7 @@ def dump_edges(df, path=os.path.join(output_directory, 'edge_table.txt')):
 def populate_edge_table(tc, df):
 
     for _, row in df[pd.notnull(df.transmitter)].iterrows():  # exclude "orphan" edges
-        tc.edges.add_row(left=0.0, right=1.0, parent=int(row.transmitter), child=int(row.infected))
+        tc.edges.add_row(left=0, right=genome_length, parent=int(row.transmitter), child=int(row.infected))
 
 
 def load_tree_collection(node_path=os.path.join(output_directory, 'node_table.txt'),
@@ -105,6 +110,14 @@ def draw_tree_to_file(ts, path=os.path.join(output_directory, 'sampled_tree.txt'
         f.write(tree.draw(format='unicode'))
 
 
+def dump_tree_to_newick(ts, path=os.path.join(output_directory, 'recapitated_newick.txt')):
+    if ts.num_trees != 1:
+        raise Exception('Expecting only to write a single tree.')
+    tree = ts.first()
+    with open(path, 'w') as f:
+        f.write(tree.newick())
+
+
 def dump_binary_tree(ts, path=os.path.join(output_directory, 'sampled_tree_sequence.trees')):
     ts.dump(path)
 
@@ -136,12 +149,19 @@ if __name__ == '__main__':
     # Alternatively, we can build it dynamically using the TableCollection API
     # (i.e. add_node, add_row)
 
-    table_collection = tskit.TableCollection(sequence_length=1.0)
-    populate_node_table(table_collection, transmissions_df, is_sampled)
-    populate_edge_table(table_collection, transmissions_df)
+    tables = tskit.TableCollection(sequence_length=genome_length)
+    populate_node_table(tables, transmissions_df, is_sampled)
+    populate_edge_table(tables, transmissions_df)
 
-    table_collection.sort()  # requires (time[parent], child, left) order
-    tree_sequence = table_collection.tree_sequence()
+    # At least one population for recapitation
+    tables.populations.add_row()
+    tables.nodes.set_columns(
+        flags=tables.nodes.flags,
+        time=tables.nodes.time,
+        population=np.zeros_like(tables.nodes.population))
+
+    tables.sort()  # requires (time[parent], child, left) order
+    tree_sequence = tables.tree_sequence()
 
     # ------------
     # Let's see what we did?
@@ -152,10 +172,10 @@ if __name__ == '__main__':
     sampled_ts = simplify_tree(tree_sequence)
 
     # Draw ASCII tree to file + view with really tiny font
-    draw_tree_to_file(sampled_ts)
+    # draw_tree_to_file(sampled_ts)
 
     # Dump to binary tree format
-    dump_binary_tree(sampled_ts)
+    # dump_binary_tree(sampled_ts)
 
     # Reload binary file to tskit.TreeCollection
     # reloaded_ts = load_binary_tree()
@@ -163,6 +183,34 @@ if __name__ == '__main__':
     # print('Reloaded tree has nodes: %d' % reloaded_tree.num_nodes)
 
     # ------------
-    # Re-run mutations
+    # Recapitate -- run coalescent model on un-coalesced trees from forward-simulation model
 
-    # generate genomes
+    uncoalesced_trees = sum([t.num_roots > 1 for t in sampled_ts.trees()])
+    print('There are %d of %d uncoalesced trees' % (uncoalesced_trees, sampled_ts.num_trees))
+
+    # We are simulating haploid, but msprime Ne is diploid Wright-Fischer, so use N/2
+    coalesced_ts = msprime.simulate(Ne=N/2, from_ts=sampled_ts)
+
+    # draw_tree_to_file(coalesced_ts, path=os.path.join(output_directory, 'recapitated_tree.txt'))
+
+    # Write to NEWICK format
+    # dump_tree_to_newick(coalesced_ts)
+
+    # ------------
+    # Run a mutation model over our full tree to generate genomes
+
+    mutated_ts = msprime.mutate(sampled_ts, rate=0.1)  # mutations (in genome of interest) per generation
+
+    # Currently only InfiniteSiteMutation model, but open issue with some traction to implement finite genome:
+    # https://github.com/tskit-dev/msprime/issues/553
+
+    print(f"The tree sequence now has {mutated_ts.num_trees} trees,"
+          f" and {mutated_ts.num_mutations} mutations.")
+
+    mutated_tree = mutated_ts.first()
+    for site in mutated_tree.sites():
+        for mutation in site.mutations:
+            print('Mutation @ position {:.2f} over node {}'.format(site.position, mutation.node))
+
+    # for variant in mutated_ts.variants():
+    #     print(variant.site.id, variant.site.position, variant.alleles, variant.genotypes, sep='\t')
