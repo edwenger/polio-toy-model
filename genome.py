@@ -10,6 +10,7 @@ https://msprime.readthedocs.io/en/stable/tutorial.html#completing-forwards-simul
 
 
 import os
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -21,7 +22,7 @@ output_directory = 'output'
 
 genome_length = 300
 
-N = 1000  # historical haploid effective population
+N = 100  # historical haploid effective population
 
 
 def parse_transmission_events():
@@ -126,6 +127,111 @@ def load_binary_tree(path=os.path.join(output_directory, 'sampled_tree_sequence.
     return tskit.load(path)
 
 
+def inspect_degenerate_mutations(ts):
+
+    mutations_by_node_position = defaultdict(int)  # count mutations by (node, integer_genome_position)
+
+    if ts.num_trees != 1:
+        raise Exception('Not yet implemented loop over trees')
+
+    tree = ts.first()
+
+    for site in tree.sites():
+        if len(site.mutations) != 1:
+            raise Exception('How in infinite-site mode?!')
+        for mutation in site.mutations:
+            # print('Mutation @ position {:.2f} over node {} with parent {}'.format(site.position, mutation.node))
+            mutations_by_node_position[(mutation.node, int(site.position))] += 1
+
+    mutations_df = pd.DataFrame.from_dict(mutations_by_node_position, orient='index')
+    mutations_df.columns = ['n_mutations']
+    mutations_df.reset_index(inplace=True)
+    mutations_df[['node', 'site']] = pd.DataFrame(mutations_df['index'].tolist(), index=mutations_df.index)
+    n_mutations = mutations_df.set_index(['site', 'node']).n_mutations
+    odd_mutations = n_mutations[n_mutations % 2 == 1].sort_values(ascending=False)
+    # print(odd_mutations.head(20))
+
+    return odd_mutations
+
+
+def squash_finite_site_mutations(ts, odd_mutations):
+
+    """
+    Remake SiteTable and MutationTable
+    based on non-redundant (i.e. odd-numbered) mutations on each edge
+    by recursively traversing full transmission tree.
+
+    Note requirements: https://tskit.readthedocs.io/en/latest/data-model.html#mutation-table
+    """
+
+    print('Original TreeSequence with %d sites and %d mutations' % (ts.num_sites, ts.num_mutations))
+
+    tables = ts.tables  # mutable copy of tree sequence
+
+    # clear sites + mutations, which we'll discretize + squash
+    tables.sites.clear()
+    tables.mutations.clear()
+
+    if ts.num_trees != 1:
+        raise Exception('Not yet implemented loop over trees')
+
+    tree = ts.first()
+
+    if len(tree.roots) != 1:
+        raise Exception('Not yet implemented loop over roots')
+
+    site_ids = {}
+
+    def iter_tree(node, mutation_by_parent):
+
+        # get sites of mutations for node
+        mutations = odd_mutations[odd_mutations.node == node].site.values
+
+        # get state of ancestor and record updated state
+        for position in mutations:
+
+            if position not in site_ids:
+                site_id = tables.sites.add_row(position=position, ancestral_state='0')
+                site_ids[position] = site_id
+                # print('Site: position=%d, ancestral_state=%s' % (position, '0'))
+
+            parent_state_tuple = mutation_by_parent.get(position, None)
+
+            if parent_state_tuple is None:
+                parent = -1  # NULL parent
+                child_state = '1'
+            else:
+                parent, parent_state = parent_state_tuple
+                child_state = '1' if parent_state == '0' else '0'
+
+            site = site_ids[position]  # ID of position in SiteTable
+
+            mutation_id = tables.mutations.add_row(site=site, node=node, parent=parent, derived_state=child_state)
+            # print('Mutation: site=%d, node=%d, parent=%d, derived_state=%s' % (site, node, parent, child_state))
+            mutation_by_parent[position] = (mutation_id, child_state)  # pass updated mutation info to children
+
+        if tree.is_leaf(node):
+            return  # dead end
+        else:
+            for child in tree.children(node):
+                iter_tree(child, mutation_by_parent.copy())  # pass copy to not overwrite
+
+    iter_tree(tree.root, {})  # begin iteration
+
+    tables.sort()
+    squashed = tables.tree_sequence()
+    print('Squashed TreeSequence with %d sites and %d mutations' % (squashed.num_sites, squashed.num_mutations))
+
+    return squashed
+
+
+def inspect_variants(ts):
+    """ Look at sample genotypes by variant """
+
+    for variant in ts.variants():
+        print(variant.site.id, variant.site.position, variant.alleles, variant.genotypes, sep='\t')
+
+
 if __name__ == '__main__':
 
     # get the output of the toy model
@@ -199,7 +305,7 @@ if __name__ == '__main__':
     # ------------
     # Run a mutation model over our full tree to generate genomes
 
-    mutated_ts = msprime.mutate(sampled_ts, rate=0.1)  # mutations (in genome of interest) per generation
+    mutated_ts = msprime.mutate(coalesced_ts, rate=0.1)  # mutations (in genome of interest) per generation
 
     # Currently only InfiniteSiteMutation model, but open issue with some traction to implement finite genome:
     # https://github.com/tskit-dev/msprime/issues/553
@@ -207,10 +313,14 @@ if __name__ == '__main__':
     print(f"The tree sequence now has {mutated_ts.num_trees} trees,"
           f" and {mutated_ts.num_mutations} mutations.")
 
-    mutated_tree = mutated_ts.first()
-    for site in mutated_tree.sites():
-        for mutation in site.mutations:
-            print('Mutation @ position {:.2f} over node {}'.format(site.position, mutation.node))
+    odd_count_mutations = inspect_degenerate_mutations(mutated_ts)
 
-    # for variant in mutated_ts.variants():
-    #     print(variant.site.id, variant.site.position, variant.alleles, variant.genotypes, sep='\t')
+    squashed_ts = squash_finite_site_mutations(mutated_ts, odd_count_mutations.reset_index())
+
+    # inspect_variants(squashed_ts)
+
+    # with open(os.path.join(output_directory, 'mutated_genomes.fasta'), 'w') as fasta_file:
+    #     squashed_ts.write_fasta(fasta_file)  # only in >=0.2.3dev0 (not in 0.2.2)
+
+    with open(os.path.join(output_directory, 'mutated_genomes.vcf'), 'w') as vcf_file:
+        squashed_ts.write_vcf(vcf_file)
